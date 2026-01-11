@@ -1,12 +1,22 @@
 import express from "express";
 import puppeteer from "puppeteer";
 
-const app = express(); // ← ОБЯЗАТЕЛЬНО ДО ЛЮБЫХ app.get
+const app = express();
 
-// лог запросов (полезно)
+// лог запросов
 app.use((req, res, next) => {
   console.log("REQUEST:", req.method, req.url);
   next();
+});
+
+// 👉 важно для Render healthcheck
+app.get("/", (_, res) => {
+  res.type("text/plain").send("OK");
+});
+
+// 👉 CORS / preflight
+app.options("*", (req, res) => {
+  res.sendStatus(200);
 });
 
 app.get("/login/", (_, res) => {
