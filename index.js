@@ -3,33 +3,37 @@ import puppeteer from "puppeteer";
 
 const app = express();
 
-// лог запросов
+/* ===== middleware ===== */
 app.use((req, res, next) => {
-  console.log("REQUEST:", req.method, req.url);
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
   next();
 });
 
-// 👉 важно для Render healthcheck
+// обязательно для Render healthcheck
 app.get("/", (_, res) => {
   res.type("text/plain").send("OK");
 });
 
-// 👉 CORS / preflight
-app.options("*", (req, res) => {
+app.options("*", (_, res) => {
   res.sendStatus(200);
 });
+
+/* ===== routes ===== */
 
 app.get("/login/", (_, res) => {
   res.type("text/plain").send("55f8dfa4-b500-4da9-8049-369ff6b94074");
 });
 
 app.get("/test/", async (req, res) => {
-  const url = req.query.URL;
-  if (!url) {
+  const targetURL = req.query.URL;
+  if (!targetURL) {
     return res.status(400).type("text/plain").send("URL is required");
   }
 
   let browser;
+
   try {
     browser = await puppeteer.launch({
       headless: "new",
@@ -44,22 +48,45 @@ app.get("/test/", async (req, res) => {
       "Chrome/120.0.0.0 Safari/537.36"
     );
 
-    await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
+    // ⚠️ НЕ networkidle2
+    await page.goto(targetURL, {
+      waitUntil: "load",
+      timeout: 60000,
     });
 
-    await page.waitForSelector("#bt", { timeout: 20000 });
-    await page.click("#bt");
+    // ищем кнопку и в main DOM, и в iframe
+    const button = await page.waitForFunction(() => {
+      const main = document.querySelector("#bt");
+      if (main) return main;
 
-    await page.waitForFunction(
-      () => document.querySelector("#inp")?.value,
-      { timeout: 20000 }
-    );
+      for (const iframe of document.querySelectorAll("iframe")) {
+        try {
+          const doc = iframe.contentDocument;
+          const btn = doc && doc.querySelector("#bt");
+          if (btn) return btn;
+        } catch (_) {}
+      }
+      return false;
+    }, { timeout: 60000 });
 
-    const value = await page.$eval("#inp", el => el.value);
+    await button.evaluate(btn => btn.click());
 
-    res.type("text/plain").send(value);
+    const value = await page.waitForFunction(() => {
+      const main = document.querySelector("#inp");
+      if (main && main.value) return main.value;
+
+      for (const iframe of document.querySelectorAll("iframe")) {
+        try {
+          const doc = iframe.contentDocument;
+          const inp = doc && doc.querySelector("#inp");
+          if (inp && inp.value) return inp.value;
+        } catch (_) {}
+      }
+      return false;
+    }, { timeout: 60000 });
+
+    res.type("text/plain").send(String(await value.jsonValue()));
+
   } catch (e) {
     console.error("TEST ERROR:", e);
     res.status(500).type("text/plain").send("error");
@@ -67,6 +94,8 @@ app.get("/test/", async (req, res) => {
     if (browser) await browser.close();
   }
 });
+
+/* ===== start ===== */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
