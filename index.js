@@ -1,17 +1,11 @@
-import express from "express";
-import puppeteer from "puppeteer";
-
-const app = express();
-
-app.get("/login/", (_, res) => {
-  res.type("text/plain").send("55f8dfa4-b500-4da9-8049-369ff6b94074");
-});
-
 app.get("/test/", async (req, res) => {
   const url = req.query.URL;
-  if (!url) return res.status(400).type("text/plain").send("URL is required");
+  if (!url) {
+    return res.status(400).type("text/plain").send("URL is required");
+  }
 
   let browser;
+
   try {
     browser = await puppeteer.launch({
       headless: "new",
@@ -19,22 +13,39 @@ app.get("/test/", async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 15000 });
 
-    await page.waitForSelector("#bt", { timeout: 5000 });
+    // ⚠️ ВАЖНО: нормальный user-agent
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+      "AppleWebKit/537.36 (KHTML, like Gecko) " +
+      "Chrome/120.0.0.0 Safari/537.36"
+    );
+
+    // ⚠️ Ждём ТОЛЬКО DOM, не networkidle
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    // ⚠️ Ждём кнопку ДОЛЬШЕ
+    await page.waitForSelector("#bt", { timeout: 20000 });
+
     await page.click("#bt");
 
-    await page.waitForFunction(() => document.querySelector("#inp")?.value, { timeout: 5000 });
-    const value = await page.$eval("#inp", (el) => el.value);
+    // Ждём, пока input заполнится
+    await page.waitForFunction(
+      () => document.querySelector("#inp")?.value,
+      { timeout: 20000 }
+    );
+
+    const value = await page.$eval("#inp", el => el.value);
 
     res.type("text/plain").send(value);
+
   } catch (e) {
-    console.error(e);
+    console.error("TEST ERROR:", e);
     res.status(500).type("text/plain").send("error");
   } finally {
     if (browser) await browser.close();
   }
 });
-
-const PORT = process.env.PORT || 10000; // на Render часто используют 10000 по умолчанию
-app.listen(PORT, () => console.log("Listening on", PORT));
