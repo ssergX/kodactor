@@ -1,3 +1,18 @@
+import express from "express";
+import puppeteer from "puppeteer";
+
+const app = express(); // ← ОБЯЗАТЕЛЬНО ДО ЛЮБЫХ app.get
+
+// лог запросов (полезно)
+app.use((req, res, next) => {
+  console.log("REQUEST:", req.method, req.url);
+  next();
+});
+
+app.get("/login/", (_, res) => {
+  res.type("text/plain").send("55f8dfa4-b500-4da9-8049-369ff6b94074");
+});
+
 app.get("/test/", async (req, res) => {
   const url = req.query.URL;
   if (!url) {
@@ -5,7 +20,6 @@ app.get("/test/", async (req, res) => {
   }
 
   let browser;
-
   try {
     browser = await puppeteer.launch({
       headless: "new",
@@ -14,25 +28,20 @@ app.get("/test/", async (req, res) => {
 
     const page = await browser.newPage();
 
-    // ⚠️ ВАЖНО: нормальный user-agent
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
       "AppleWebKit/537.36 (KHTML, like Gecko) " +
       "Chrome/120.0.0.0 Safari/537.36"
     );
 
-    // ⚠️ Ждём ТОЛЬКО DOM, не networkidle
     await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
 
-    // ⚠️ Ждём кнопку ДОЛЬШЕ
     await page.waitForSelector("#bt", { timeout: 20000 });
-
     await page.click("#bt");
 
-    // Ждём, пока input заполнится
     await page.waitForFunction(
       () => document.querySelector("#inp")?.value,
       { timeout: 20000 }
@@ -41,11 +50,15 @@ app.get("/test/", async (req, res) => {
     const value = await page.$eval("#inp", el => el.value);
 
     res.type("text/plain").send(value);
-
   } catch (e) {
     console.error("TEST ERROR:", e);
     res.status(500).type("text/plain").send("error");
   } finally {
     if (browser) await browser.close();
   }
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log("Listening on", PORT);
 });
