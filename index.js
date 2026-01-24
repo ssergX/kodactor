@@ -1,103 +1,60 @@
 import express from "express";
-import puppeteer from "puppeteer";
 
 const app = express();
+const LOGIN = "cerg0909"; // Твой логин
 
-/* ===== middleware ===== */
+// Ссылка на скрипт с логикой (функция f(n))
+const SECRET_SCRIPT_URL = "https://kodaktor.ru/j/51e39e4";
+
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   next();
 });
 
-// обязательно для Render healthcheck
-app.get("/", (_, res) => {
-  res.type("text/plain").send("OK");
+app.get("/login", (req, res) => {
+  res.send(LOGIN);
 });
 
-app.options("*", (_, res) => {
-  res.sendStatus(200);
-});
-
-/* ===== routes ===== */
-
-app.get("/login/", (_, res) => {
-  res.type("text/plain").send("55f8dfa4-b500-4da9-8049-369ff6b94074");
-});
-
-app.get("/test/", async (req, res) => {
-  const targetURL = req.query.URL;
-  if (!targetURL) {
-    return res.status(400).type("text/plain").send("URL is required");
-  }
-
-  let browser;
-
+// --- УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ОБРАБОТКИ (ХАКЕРСКАЯ) ---
+const zombieHandler = async (req, res) => {
   try {
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
+    let num = req.params.num;
 
-    const page = await browser.newPage();
+    if (!num) {
+      num = Object.keys(req.query)[0];
+    }
 
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-      "AppleWebKit/537.36 (KHTML, like Gecko) " +
-      "Chrome/120.0.0.0 Safari/537.36"
-    );
+    if (!num) {
+      return res.status(400).send("Error: No number provided");
+    }
 
-    // ⚠️ НЕ networkidle2
-    await page.goto(targetURL, {
-      waitUntil: "load",
-      timeout: 60000,
-    });
+    console.log(`Calculating for: ${num}`);
 
-    // ищем кнопку и в main DOM, и в iframe
-    const button = await page.waitForFunction(() => {
-      const main = document.querySelector("#bt");
-      if (main) return main;
+    const response = await fetch(SECRET_SCRIPT_URL);
+    if (!response.ok) throw new Error("Script not found");
+    const scriptCode = await response.text();
 
-      for (const iframe of document.querySelectorAll("iframe")) {
-        try {
-          const doc = iframe.contentDocument;
-          const btn = doc && doc.querySelector("#bt");
-          if (btn) return btn;
-        } catch (_) {}
-      }
-      return false;
-    }, { timeout: 60000 });
+    const calculate = new Function(scriptCode + `; return f(${num});`);
 
-    await button.evaluate(btn => btn.click());
+    const result = calculate();
 
-    const value = await page.waitForFunction(() => {
-      const main = document.querySelector("#inp");
-      if (main && main.value) return main.value;
+    console.log(`Result: ${result}`);
 
-      for (const iframe of document.querySelectorAll("iframe")) {
-        try {
-          const doc = iframe.contentDocument;
-          const inp = doc && doc.querySelector("#inp");
-          if (inp && inp.value) return inp.value;
-        } catch (_) {}
-      }
-      return false;
-    }, { timeout: 60000 });
-
-    res.type("text/plain").send(String(await value.jsonValue()));
-
-  } catch (e) {
-    console.error("TEST ERROR:", e);
-    res.status(500).type("text/plain").send("error");
-  } finally {
-    if (browser) await browser.close();
+    res.send(String(result));
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Error: " + error.message);
   }
-});
+};
 
-/* ===== start ===== */
+// Ловит /zombie?1234
+app.get("/zombie", zombieHandler);
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log("Listening on", PORT);
+// Ловит /zombie/1234
+app.get("/zombie/:num", zombieHandler);
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server started on port ${port}`);
 });
